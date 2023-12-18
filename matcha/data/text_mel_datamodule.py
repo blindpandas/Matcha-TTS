@@ -2,14 +2,13 @@ import random
 from typing import Any, Dict, Optional
 
 import torch
-import torchaudio as ta
+import torchaudio
 from lightning import LightningDataModule
 from torch.utils.data.dataloader import DataLoader
 
 from matcha.text import text_to_sequence
-from matcha.utils.audio import mel_spectrogram
 from matcha.utils.model import fix_len_compatibility, normalize
-from matcha.utils.utils import intersperse
+from matcha.utils.utils import intersperse, safe_log
 
 
 def parse_filelist(filelist_path, split_char="|"):
@@ -152,6 +151,14 @@ class TextMelDataset(torch.utils.data.Dataset):
             self.data_parameters = {"mel_mean": 0, "mel_std": 1}
         random.seed(seed)
         random.shuffle(self.filepaths_and_text)
+        self.mel_spec = torchaudio.transforms.MelSpectrogram(
+            sample_rate=sample_rate,
+            n_fft=n_fft,
+            hop_length=hop_length,
+            n_mels=n_mels,
+            center=True,
+            power=1,
+        )
 
     def get_datapoint(self, filepath_and_text):
         if self.n_spks > 1:
@@ -170,21 +177,16 @@ class TextMelDataset(torch.utils.data.Dataset):
         return {"x": text, "y": mel, "spk": spk}
 
     def get_mel(self, filepath):
-        audio, sr = ta.load(filepath)
-        assert sr == self.sample_rate
-        mel = mel_spectrogram(
-            audio,
-            self.n_fft,
-            self.n_mels,
-            self.sample_rate,
-            self.hop_length,
-            self.win_length,
-            self.f_min,
-            self.f_max,
-            center=False,
-        ).squeeze()
-        mel = normalize(mel, self.data_parameters["mel_mean"], self.data_parameters["mel_std"])
-        return mel
+        y, sr = torchaudio.load(filepath)
+        if y.size(0) > 1:
+            # mix to mono
+            y = y.mean(dim=0, keepdim=True)
+        if sr != self.sample_rate:
+            y = torchaudio.functional.resample(y, orig_freq=sr, new_freq=self.sample_rate)
+        audio = y[0]
+        mel = self.mel_spec(audio)
+        features = safe_log(mel)
+        return features
 
     def get_text(self, text, add_blank=True):
         text_norm = text_to_sequence(text, self.cleaners)
