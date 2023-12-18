@@ -20,6 +20,7 @@ for ut_type in ["train_parallel", "train_non_parallel"]:
         filepath = os.fspath(
             wav_path.joinpath(file_stem).with_suffix(".wav")
         )
+        assert os.path.isfile(filepath), f"File {filepath} does not exist"
         TRAIN_DATASET.append(f"{filepath} | {text}")
 
 ROOT_PATH.joinpath("train.txt").write_text(
@@ -36,6 +37,7 @@ for line in eval_lines:
     filepath = os.fspath(
         eval_wav.joinpath(file_stem).with_suffix(".wav")
     )
+    assert os.path.isfile(filepath), f"File {filepath} does not exist"
     EVAL_DATASET.append(f"{filepath} | {text}")
 
 ROOT_PATH.joinpath("eval.txt").write_text(
