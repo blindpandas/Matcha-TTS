@@ -177,7 +177,7 @@ class TextMelDataset(torch.utils.data.Dataset):
         return {"x": text, "y": mel, "spk": spk}
 
     def get_mel(self, filepath):
-        y, sr = torchaudio.load(filepath.strip())
+        y, sr = torchaudio.load(filepath)
         if y.size(0) > 1:
             # mix to mono
             y = y.mean(dim=0, keepdim=True)
