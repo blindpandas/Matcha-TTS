@@ -185,11 +185,12 @@ class TextMelDataset(torch.utils.data.Dataset):
         return {"x": text, "y": mel, "spk": spk}
 
     def get_mel(self, filepath):
+        filepath = filepath.strip()
         file_id = md5(filepath.encode("utf-8")).hexdigest()
         mel_filepath = self.mel_cache_dir.joinpath(file_id).with_suffix(".mel")
         if mel_filepath.is_file():
             return torch.load(mel_filepath)
-        y, sr = torchaudio.load(filepath.strip())
+        y, sr = torchaudio.load(filepath)
         if y.size(0) > 1:
             # mix to mono
             y = y.mean(dim=0, keepdim=True)
