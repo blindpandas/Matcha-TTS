@@ -1,4 +1,6 @@
 import random
+from hashlib import md5
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import torch
@@ -38,6 +40,7 @@ class TextMelDataModule(LightningDataModule):
         f_max,
         data_statistics,
         seed,
+        mel_cache_dir,
     ):
         super().__init__()
 
@@ -67,6 +70,7 @@ class TextMelDataModule(LightningDataModule):
             self.hparams.f_max,
             self.hparams.data_statistics,
             self.hparams.seed,
+            self.params.mel_cache_dir
         )
         self.validset = TextMelDataset(  # pylint: disable=attribute-defined-outside-init
             self.hparams.valid_filelist_path,
@@ -82,6 +86,7 @@ class TextMelDataModule(LightningDataModule):
             self.hparams.f_max,
             self.hparams.data_statistics,
             self.hparams.seed,
+            self.params.mel_cache_dir,
         )
 
     def train_dataloader(self):
@@ -133,6 +138,7 @@ class TextMelDataset(torch.utils.data.Dataset):
         f_max=8000,
         data_parameters=None,
         seed=None,
+        mel_cache_dir=None,
     ):
         self.filepaths_and_text = parse_filelist(filelist_path)
         self.n_spks = n_spks
@@ -149,6 +155,8 @@ class TextMelDataset(torch.utils.data.Dataset):
             self.data_parameters = data_parameters
         else:
             self.data_parameters = {"mel_mean": 0, "mel_std": 1}
+        self.mel_cache_dir = Path(mel_cache_dir)
+        self.mel_cache_dir.mkdir(parents=True, exist_ok=True)
         random.seed(seed)
         random.shuffle(self.filepaths_and_text)
         self.mel_spec = torchaudio.transforms.MelSpectrogram(
@@ -177,7 +185,11 @@ class TextMelDataset(torch.utils.data.Dataset):
         return {"x": text, "y": mel, "spk": spk}
 
     def get_mel(self, filepath):
-        y, sr = torchaudio.load(filepath)
+        file_id = md5(filepath.encode("utf-8")).hexdigest()
+        mel_filepath = self.mel_cache_dir.joinpath(file_id).with_suffix(".mel")
+        if mel_filepath.is_file():
+            return torch.load(mel_filepath)
+        y, sr = torchaudio.load(filepath.strip())
         if y.size(0) > 1:
             # mix to mono
             y = y.mean(dim=0, keepdim=True)
@@ -186,6 +198,7 @@ class TextMelDataset(torch.utils.data.Dataset):
         audio = y[0]
         mel = self.mel_spec(audio)
         features = safe_log(mel)
+        torch.save(features, mel_filepath)
         return features
 
     def get_text(self, text, add_blank=True):
